@@ -1,0 +1,24 @@
+```{r}
+library(tuneR)
+library(audio)
+setWavPlayer('/usr/bin/afplay')
+tdir <- "~/Desktop/emotifymusic"
+genreactual="classical"
+tfilepop <- file.path(tdir, genreactual)
+lispop=list.files(tfilepop, pattern = "\\.mp3$")
+dfmain=NULL
+df1=NULL
+
+func1<-function(song){
+tfilepopp <- file.path(tfilepop, song)
+tmp2<-readMP3(tfilepopp)
+mfcc4<-melfcc(Wave(tmp2@right),sr = tmp2@samp.rate, wintime = 10, hoptime = 10)
+df1=as.data.frame(list(song,as.matrix(mfcc4),genreactual),col.names = c("song","mfcc","Genre"))
+return(df1)
+}
+
+datafiles<-lapply(lispop[1],func1)
+df <- do.call("rbind", datafiles)
+#write.csv(df,"~/Documents/mfccclassical.csv")
+```
+

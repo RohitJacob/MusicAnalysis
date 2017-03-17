@@ -1,0 +1,210 @@
+---
+title: "Emotional Classification of Music"
+author: "Sahil Jain, Rohit Jacob"
+output: slidy_presentation
+---
+
+```{r,echo=FALSE}
+options(warn = 0)
+```
+
+##Libraries used
+```{r}
+suppressMessages(library(plyr))
+suppressMessages(library(dplyr))
+suppressMessages(library(magrittr))
+suppressMessages(library(rpart))
+suppressMessages(library(randomForest))
+suppressMessages(library(xgboost))
+suppressMessages(library(caret))
+
+#New
+suppressMessages(library(tuneR))
+suppressMessages(library(audio))
+suppressMessages(library(tidyr))
+suppressMessages(library(h2o))
+
+```
+
+##Feature Extraction Example:
+
+```{r}
+song<-readMP3('~/Desktop/emotifymusic/rock/1.mp3')
+suppressWarnings(mfcc<-melfcc(Wave(song@right),sr = song@samp.rate, wintime = 10, hoptime = 10))
+as.data.frame(mfcc)
+#setWavPlayer('/usr/bin/afplay')
+#play(song)
+```
+
+##Models Used
+###KMeans
+```{r}
+#KMeans
+
+d1=read.csv("~/Desktop/emotifymusic/dfs/mfccclassical.csv")
+d2=read.csv("~/Desktop/emotifymusic/dfs/mfccrock.csv")
+d3=read.csv("~/Desktop/emotifymusic/dfs/mfccpop.csv")
+d4=read.csv("~/Desktop/emotifymusic/dfs/mfccelectronic.csv")
+df=rbind(d1,d2,d3,d4)
+#write.csv(df,"~/Desktop/emotifymusic/dfs/mfcc.csv")
+lc<-kmeans(df[,3:14],4,nstart = 50,iter.max = 100)
+
+table(lc$cluster,df$Genre)
+```
+###KNN
+```{r}
+#KNN
+library(class)
+df=read.csv("~/Desktop/emotifymusic/dfs/mfcc.csv")
+drops <- c("X.1")
+df=df[ , !(names(df) %in% drops)]
+
+smp_size <- floor(0.75 * nrow(df))
+train_ind <- sample(seq_len(nrow(df)), size = smp_size)
+x_train <- df[train_ind, 3:14]
+x_test <- df[-train_ind, 3:14]
+y_train <- df[train_ind, 15]
+y_test <- df[-train_ind, 15]
+
+res = knn(x_train, x_test, y_train, k = 4, prob = TRUE)
+table(res,y_test)
+```
+###RPart
+```{r}
+library(rpart)
+library(caret)
+fit = rpart(Genre~mfcc.1+mfcc.2+mfcc.3+mfcc.4+mfcc.1+mfcc.2+mfcc.3+mfcc.4
+            +mfcc.5+mfcc.6+mfcc.7+mfcc.8+mfcc.9+mfcc.10+mfcc.11+mfcc.12, method="class", data=df)
+# summary(fit)
+# Variable importance
+# mfcc.6  mfcc.2  mfcc.8  mfcc.1 mfcc.10  mfcc.4  mfcc.7 mfcc.12  mfcc.3  mfcc.5  mfcc.9 mfcc.11 
+#     23      13      13      12      10       8       6       5       4       3       2       1 
+
+pred = predict(fit, type="class")
+confusionMatrix(pred,df$Genre)
+```
+###Random Forest
+```{r}
+library(randomForest)
+x = as.matrix(df[3:14])
+yf=factor(df[,15])
+
+res = randomForest(x,yf,mtry=4)
+print(res)
+```
+
+```{r}
+library(xgboost)
+smp_size <- floor(0.75 * nrow(df))
+train_ind <- sample(seq_len(nrow(df)), size = smp_size)
+x_train <- df[train_ind, 3:14]
+x_test <- df[-train_ind, 3:14]
+y_train <- df[train_ind, 15]
+y_test <- df[-train_ind, 15]
+
+dftrain <- df[train_ind,3:15]
+dftest <- df[-train_ind, 3:15]
+
+xm_train <- as.matrix(x_train)
+xm_test <- as.matrix(x_test)
+dtrain <- xgb.DMatrix(data = xm_train, label = y_train)
+
+res <- xgboost(data=dtrain, nrounds=10)
+
+#1000 rounds
+#y_test        1  2  3  4  5
+#  classical  99 42  6  0  0
+#  electronic 15 76 51  6  0
+#  pop         8 30 87 11  0
+#  rock        2 16 80 67  1
+
+res
+
+at=predict(res,xm_test)
+cm = table(y_test, as.integer(round(at)))
+print(cm)
+
+print(chisq.test(cm))
+```
+
+## Deep Learning with H2o
+```{r}
+library(h2o)
+localH2O <- h2o.init(ip = 'localhost', port = 54321, max_mem_size = '4g',nthreads=-1,startH2O = TRUE)
+
+
+
+```
+
+##Genre Classification Neural Network
+```{r}
+train<-read.csv("/Users/Rohit/Desktop/overall.csv")
+y = c('genreactual')
+x = setdiff(names(train),c("amazement","solemnity","tenderness","joyful_activation","calmness","tension","nostalgia","power","sadness","genreactual.y","song.y","X.x","genreactual.x","song.x","sg","X.y" ,"X.1","C1",y,"song","X", "emotion"))
+smp_size <- floor(0.75 * nrow(train))
+train_ind <- sample(seq_len(nrow(train)), size = smp_size)
+train=train[train_ind,]
+test=train[-train_ind,]
+
+train[,y] = as.factor(train[,y])
+test[,y] = as.factor(test[,y])
+
+t1=as.h2o(train)
+t2=as.h2o(test)
+gmodel = h2o.deeplearning(x=x, 
+                         y=y, 
+                         training_frame=t1, 
+                         validation_frame=t2, 
+                         hidden = c(50,50),
+                         epochs = 60)
+gmodel
+head(t)
+```
+
+##Emotion Classification Neural Network
+```{r}
+train<-read.csv("/Users/Rohit/Desktop/overall.csv")
+y = c(names(train)[11])
+x = setdiff(names(train),c("amazement","solemnity","tenderness","joyful_activation","calmness","tension","nostalgia","power","sadness","genreactual.y","song.y","X.x","genreactual.x","song.x","sg","X.y" ,"X.1","C1",y,"song","X","genreactual"))
+smp_size <- floor(0.75 * nrow(train))
+train_ind <- sample(seq_len(nrow(train)), size = smp_size)
+train=train[train_ind,]
+test=train[-train_ind,]
+
+train[,y] = as.factor(train[,y])
+test[,y] = as.factor(test[,y])
+
+t1=as.h2o(train)
+t2=as.h2o(test)
+emodel = h2o.deeplearning(x=x, 
+                         y=y, 
+                         training_frame=t1, 
+                         validation_frame=t2, 
+                         hidden = c(20,20),
+                         epochs = 60)
+emodel
+head(t)
+```
+
+
+##Testing Genre with Out-Of-Sample Data
+```{r}
+#Coldplay - Paradis
+tmp<-readMP3('/Users/Rohit/Desktop/astronomia.mp3')
+mfcc5<-melfcc(Wave(tmp@right),sr = tmp@samp.rate, wintime = 5, hoptime = 5)
+mfcc5=matrix(t(mfcc5),nrow = 1,ncol = 144)
+gl1=data.frame(mfcc5)
+
+h2o.predict(gmodel,as.h2o(gl1)) 
+```
+
+##Testing Emotion with Out-Of-Sample Data
+```{r}
+tmp<-readMP3('/Users/Rohit/Desktop/heathen.mp3')
+mfcc5<-melfcc(Wave(tmp@right),sr = tmp@samp.rate, wintime = 5, hoptime = 5)
+mfcc5=matrix(t(mfcc5),nrow = 1,ncol = 144)
+gl1=data.frame(mfcc5)
+
+h2o.predict(emodel,as.h2o(gl1)) 
+```
+
